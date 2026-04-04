@@ -1,5 +1,2 @@
 [build]
-builder = "railpack"
-
-[build.railpack]
 pythonVersion = "3.11"
