@@ -1,1 +1,1 @@
-worker: python bot_discord_final.py
+worker: python app_final_03_04_2026.py
