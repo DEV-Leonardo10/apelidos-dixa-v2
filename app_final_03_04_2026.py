@@ -23,17 +23,29 @@ linhas_arquivo = []
 CONFIG_FILE = "config_servidores.json"
 ARQUIVO_DESATUALIZADO = "apelidos_dixa_desatualizado.txt"
 
-# ID do Google Docs - carregado de variável de ambiente
+# IDs do Google Docs
 GOOGLE_DOCS_FILE_ID = os.getenv("GOOGLE_DOCS_FILE_ID", "SEU_ID_AQUI")
+GOOGLE_DOCS_FILE_ID_COMPARATIVO = os.getenv(
+    "GOOGLE_DOCS_FILE_ID_COMPARATIVO", "SEU_ID_AQUI"
+)
 
 
 def carregar_configs():
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                config = json.load(f)
+            print(f"✅ DEBUG: Arquivo '{CONFIG_FILE}' carregado com sucesso sem erros!")
+            print(f"   📋 Total de servidores configurados: {len(config)}")
+            for id_servidor, conf in config.items():
+                print(
+                    f"      • Servidor {id_servidor}: canal={conf.get('canal_meia_noite')}, usuário={conf.get('usuario_apelido')}"
+                )
+            return config
         except Exception as e:
             print(f"❌ Erro ao carregar configurações: {e}")
+    else:
+        print(f"⚠️ DEBUG: Arquivo '{CONFIG_FILE}' não encontrado!")
     return {}
 
 
@@ -100,38 +112,63 @@ def parse_categorias(linhas: list) -> dict:
 async def verificar_novos_apelidos():
     """
     A cada 24h:
-    1. Baixa o Google Docs
-    2. Compara com ARQUIVO_DESATUALIZADO (snapshot anterior)
-    3. Notifica o canal sobre apelidos novos
+    1. Baixa o Google Docs principal
+    2. Compara com o Google Docs comparativo
+    3. Se houver diferenças, duplica o conteúdo do principal para o comparativo
+    4. Notifica o canal sobre apelidos novos
     """
     global linhas_arquivo
 
-    if GOOGLE_DOCS_FILE_ID == "SEU_ID_AQUI":
+    if (
+        GOOGLE_DOCS_FILE_ID == "SEU_ID_AQUI"
+        or GOOGLE_DOCS_FILE_ID_COMPARATIVO == "SEU_ID_AQUI"
+    ):
+        print("⚠️ DEBUG: Google Docs IDs não configurados!")
         return
 
     try:
-        conteudo = await asyncio.get_event_loop().run_in_executor(
+        print("📊 DEBUG: Comparando apelidos entre os dois Docs...")
+
+        conteudo_principal = await asyncio.get_event_loop().run_in_executor(
             None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
         )
 
-        linhas_docs = [
-            l.rstrip("\n").rstrip("\r") for l in conteudo.split("\n") if l.strip()
+        conteudo_comparativo = await asyncio.get_event_loop().run_in_executor(
+            None, baixar_google_docs, GOOGLE_DOCS_FILE_ID_COMPARATIVO
+        )
+
+        linhas_principal = [
+            l.rstrip("\n").rstrip("\r")
+            for l in conteudo_principal.split("\n")
+            if l.strip()
         ]
-        linhas_antigas = ler_linhas_arquivo(ARQUIVO_DESATUALIZADO)
+        linhas_comparativo = [
+            l.rstrip("\n").rstrip("\r")
+            for l in conteudo_comparativo.split("\n")
+            if l.strip()
+        ]
 
-        apelidos_docs = parse_categorias(linhas_docs)
-        apelidos_antigos = parse_categorias(linhas_antigas)
+        apelidos_principal = parse_categorias(linhas_principal)
+        apelidos_comparativo = parse_categorias(linhas_comparativo)
 
+        print(f"📊 DEBUG: Apelidos no Docs PRINCIPAL: {len(apelidos_principal)}")
+        print(f"📊 DEBUG: Apelidos no Docs COMPARATIVO: {len(apelidos_comparativo)}")
+
+        # O que está no principal mas não estava no comparativo = novo
         adicionados = {
             apelido: categoria
-            for apelido, categoria in apelidos_docs.items()
-            if apelido not in apelidos_antigos
+            for apelido, categoria in apelidos_principal.items()
+            if apelido not in apelidos_comparativo
         }
 
-        linhas_arquivo = linhas_docs
+        # Atualiza o estado em memória
+        linhas_arquivo = linhas_principal
 
         if adicionados:
-            print(f"🆕 {len(adicionados)} novo(s) apelido(s) detectado(s)!")
+            print(f"🆕 DEBUG: {len(adicionados)} novo(s) apelido(s) detectado(s)!")
+            print(
+                f"📝 DEBUG: Duplicando conteúdo do Docs PRINCIPAL para o Docs COMPARATIVO..."
+            )
 
             configs = carregar_configs()
             for config in configs.values():
@@ -161,7 +198,7 @@ async def verificar_novos_apelidos():
                 await canal.send(embed=embed)
 
         else:
-            print("🔄 Verificação concluída — nenhum apelido novo encontrado.")
+            print("✅ DEBUG: Nenhum apelido novo encontrado!")
 
     except Exception as e:
         print(f"❌ Erro ao verificar novos apelidos: {e}")
@@ -207,6 +244,9 @@ async def on_ready():
     else:
         print("⚠️  Google Docs ID não configurado. Carregando arquivo local...")
         carregar_local()
+
+    # Carregar configs para verificar
+    carregar_configs()
 
     enviar_meia_noite.start()
     verificar_novos_apelidos.start()
@@ -294,14 +334,6 @@ async def enviar_meia_noite():
 
                 except Exception as e:
                     print(f"❌ Erro ao alterar apelido: {e}")
-
-        try:
-            conteudo_atual = await asyncio.get_event_loop().run_in_executor(
-                None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
-            )
-            sincronizar_arquivos(conteudo_atual)
-        except Exception as e:
-            print(f"❌ Erro ao sincronizar snapshot: {e}")
 
         await asyncio.sleep(61)
 
@@ -735,10 +767,73 @@ async def teste_meia_noite(ctx):
 @bot.command(name="testenovo")
 @commands.has_permissions(administrator=True)
 async def teste_novos_apelidos(ctx):
-    """Força a verificação de novos apelidos agora (Admin)."""
+    """Força a verificação de novos apelidos agora e anuncia no canal (Admin)."""
+
+    # Envia mensagem inicial
     await ctx.send("🔄 Verificando novos apelidos no Google Docs...")
-    await verificar_novos_apelidos()
-    await ctx.send("✅ Verificação concluída! Veja o canal da meia-noite.")
+
+    try:
+        if (
+            GOOGLE_DOCS_FILE_ID == "SEU_ID_AQUI"
+            or GOOGLE_DOCS_FILE_ID_COMPARATIVO == "SEU_ID_AQUI"
+        ):
+            await ctx.send("❌ Google Docs IDs não configurados!")
+            return
+
+        # Baixa os dois Docs
+        conteudo_principal = await asyncio.get_event_loop().run_in_executor(
+            None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
+        )
+
+        conteudo_comparativo = await asyncio.get_event_loop().run_in_executor(
+            None, baixar_google_docs, GOOGLE_DOCS_FILE_ID_COMPARATIVO
+        )
+
+        linhas_principal = [
+            l.rstrip("\n").rstrip("\r")
+            for l in conteudo_principal.split("\n")
+            if l.strip()
+        ]
+        linhas_comparativo = [
+            l.rstrip("\n").rstrip("\r")
+            for l in conteudo_comparativo.split("\n")
+            if l.strip()
+        ]
+
+        apelidos_principal = parse_categorias(linhas_principal)
+        apelidos_comparativo = parse_categorias(linhas_comparativo)
+
+        # Detecta novos apelidos
+        adicionados = {
+            apelido: categoria
+            for apelido, categoria in apelidos_principal.items()
+            if apelido not in apelidos_comparativo
+        }
+
+        if adicionados:
+            # Há novos apelidos
+            por_categoria: dict = {}
+            for apelido, categoria in adicionados.items():
+                por_categoria.setdefault(categoria, []).append(apelido)
+
+            embed = discord.Embed(
+                title=f"🆕 {len(adicionados)} Novo(s) Apelido(s) Detectado(s)!",
+                color=discord.Color.teal(),
+            )
+            for categoria, apelidos_lista in por_categoria.items():
+                embed.add_field(
+                    name=f"📂 {categoria}",
+                    value="\n".join(f"• **{a}**" for a in apelidos_lista),
+                    inline=False,
+                )
+            embed.set_footer(text="Verificação manual via !testenovo")
+            await ctx.send(embed=embed)
+        else:
+            # Nenhum apelido novo
+            await ctx.send("✅ Verificação concluída! Nenhum apelido novo.")
+
+    except Exception as e:
+        await ctx.send(f"❌ Erro na verificação: {e}")
 
 
 @bot.command(name="ajuda", aliases=["comandos", "help"])
