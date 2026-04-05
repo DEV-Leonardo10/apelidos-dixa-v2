@@ -21,13 +21,10 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 linhas_arquivo = []
 CONFIG_FILE = "config_servidores.json"
-ARQUIVO_DESATUALIZADO = "apelidos_dixa_desatualizado.txt"
 
 # IDs do Google Docs
 GOOGLE_DOCS_FILE_ID = os.getenv("GOOGLE_DOCS_FILE_ID", "SEU_ID_AQUI")
-GOOGLE_DOCS_FILE_ID_COMPARATIVO = os.getenv(
-    "GOOGLE_DOCS_FILE_ID_COMPARATIVO", "SEU_ID_AQUI"
-)
+GOOGLE_DOCS_FILE_ID_COMPARATIVO = os.getenv("GOOGLE_DOCS_FILE_ID_COMPARATIVO", "SEU_ID_AQUI")
 
 
 def carregar_configs():
@@ -38,36 +35,13 @@ def carregar_configs():
             print(f"✅ DEBUG: Arquivo '{CONFIG_FILE}' carregado com sucesso sem erros!")
             print(f"   📋 Total de servidores configurados: {len(config)}")
             for id_servidor, conf in config.items():
-                print(
-                    f"      • Servidor {id_servidor}: canal={conf.get('canal_meia_noite')}, usuário={conf.get('usuario_apelido')}"
-                )
+                print(f"      • Servidor {id_servidor}: canal={conf.get('canal_meia_noite')}, usuário={conf.get('usuario_apelido')}")
             return config
         except Exception as e:
             print(f"❌ Erro ao carregar configurações: {e}")
     else:
         print(f"⚠️ DEBUG: Arquivo '{CONFIG_FILE}' não encontrado!")
     return {}
-
-
-def ler_linhas_arquivo(caminho: str) -> list:
-    """Lê um .txt local e devolve lista de linhas limpas."""
-    if not os.path.exists(caminho):
-        return []
-    with open(caminho, "r", encoding="utf-8") as f:
-        return [
-            linha.rstrip("\n").rstrip("\r") for linha in f.readlines() if linha.strip()
-        ]
-
-
-def sincronizar_arquivos(conteudo: str):
-    """
-    Salva o conteúdo do Google Docs no arquivo desatualizado (snapshot).
-    Chamado após a mensagem da meia-noite para atualizar o snapshot.
-    """
-    with open(ARQUIVO_DESATUALIZADO, "w", encoding="utf-8") as f:
-        f.write(conteudo)
-
-    print("🔄 Snapshot sincronizado: Docs → desatualizado.txt")
 
 
 def baixar_google_docs(doc_id: str) -> str:
@@ -119,33 +93,26 @@ async def verificar_novos_apelidos():
     """
     global linhas_arquivo
 
-    if (
-        GOOGLE_DOCS_FILE_ID == "SEU_ID_AQUI"
-        or GOOGLE_DOCS_FILE_ID_COMPARATIVO == "SEU_ID_AQUI"
-    ):
+    if GOOGLE_DOCS_FILE_ID == "SEU_ID_AQUI" or GOOGLE_DOCS_FILE_ID_COMPARATIVO == "SEU_ID_AQUI":
         print("⚠️ DEBUG: Google Docs IDs não configurados!")
         return
 
     try:
         print("📊 DEBUG: Comparando apelidos entre os dois Docs...")
-
+        
         conteudo_principal = await asyncio.get_event_loop().run_in_executor(
             None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
         )
-
+        
         conteudo_comparativo = await asyncio.get_event_loop().run_in_executor(
             None, baixar_google_docs, GOOGLE_DOCS_FILE_ID_COMPARATIVO
         )
 
         linhas_principal = [
-            l.rstrip("\n").rstrip("\r")
-            for l in conteudo_principal.split("\n")
-            if l.strip()
+            l.rstrip("\n").rstrip("\r") for l in conteudo_principal.split("\n") if l.strip()
         ]
         linhas_comparativo = [
-            l.rstrip("\n").rstrip("\r")
-            for l in conteudo_comparativo.split("\n")
-            if l.strip()
+            l.rstrip("\n").rstrip("\r") for l in conteudo_comparativo.split("\n") if l.strip()
         ]
 
         apelidos_principal = parse_categorias(linhas_principal)
@@ -166,9 +133,7 @@ async def verificar_novos_apelidos():
 
         if adicionados:
             print(f"🆕 DEBUG: {len(adicionados)} novo(s) apelido(s) detectado(s)!")
-            print(
-                f"📝 DEBUG: Duplicando conteúdo do Docs PRINCIPAL para o Docs COMPARATIVO..."
-            )
+            print(f"📝 DEBUG: Duplicando conteúdo do Docs PRINCIPAL para o Docs COMPARATIVO...")
 
             configs = carregar_configs()
             for config in configs.values():
@@ -229,48 +194,20 @@ async def on_ready():
                 l.rstrip("\n").rstrip("\r") for l in conteudo.split("\n") if l.strip()
             ]
 
-            if not os.path.exists(ARQUIVO_DESATUALIZADO):
-                sincronizar_arquivos(conteudo)
-                print("📋 Primeira execução: snapshot inicial criado.")
-
             print(
                 f"✅ Arquivo carregado do Google Docs! ({len(linhas_arquivo)} linhas, {len(parse_categorias(linhas_arquivo))} apelidos)"
             )
 
         except Exception as e:
             print(f"❌ Erro ao baixar do Google Docs: {e}")
-            print("⚠️  Tentando carregar arquivo local...")
-            carregar_local()
     else:
-        print("⚠️  Google Docs ID não configurado. Carregando arquivo local...")
-        carregar_local()
+        print("⚠️  Google Docs ID não configurado!")
 
-    # Carregar configs para verificar
+    # Carregar configs uma única vez na inicialização
     carregar_configs()
 
     enviar_meia_noite.start()
     verificar_novos_apelidos.start()
-
-
-def carregar_local():
-    global linhas_arquivo
-    arquivo_padrao = "apelidos_dixa.txt"
-
-    if os.path.exists(arquivo_padrao):
-        try:
-            with open(arquivo_padrao, "r", encoding="utf-8") as f:
-                linhas_arquivo = [
-                    linha.rstrip("\n").rstrip("\r") for linha in f.readlines()
-                ]
-            print(
-                f'✅ Arquivo local "{arquivo_padrao}" carregado! ({len(linhas_arquivo)} linhas)'
-            )
-        except Exception as e:
-            print(f"❌ Erro ao carregar arquivo local: {e}")
-    else:
-        print(
-            f'⚠️  Arquivo "{arquivo_padrao}" não encontrado. Use !carregar para carregar manualmente.'
-        )
 
 
 @tasks.loop(minutes=1)
@@ -299,6 +236,8 @@ async def enviar_meia_noite():
 
                     if linhas_validas:
                         apelido_do_dia = random.choice(linhas_validas)
+                        # Limitar a 32 caracteres
+                        apelido_do_dia = apelido_do_dia[:32]
 
                         embed = discord.Embed(
                             title="🌙 Mensagem da Meia-Noite",
@@ -341,7 +280,7 @@ async def enviar_meia_noite():
 @bot.command(name="recarregar")
 @commands.has_permissions(administrator=True)
 async def recarregar_drive(ctx):
-    """Recarrega o arquivo do Google Docs manualmente (Admin)."""
+    """Recarrega o arquivo do Google Docs (Admin)."""
     global linhas_arquivo
 
     await ctx.send("📥 Baixando arquivo do Google Docs...")
@@ -370,7 +309,7 @@ async def enviar_apelido(ctx):
 
     if not linhas_arquivo:
         await ctx.send(
-            "❌ Nenhum arquivo foi carregado! Use !carregar arquivo.txt primeiro."
+            "❌ Nenhum arquivo foi carregado!"
         )
         return
 
@@ -395,7 +334,7 @@ async def enviar_apelido(ctx):
             todas_mensagens.append({"mensagem": item, "categoria": categoria})
 
     if not todas_mensagens:
-        await ctx.send("❌ Nenhuma mensagem válida encontrada no arquivo!")
+        await ctx.send("❌ Nenhuma mensagem válida encontrada!")
         return
 
     escolhida = random.choice(todas_mensagens)
@@ -419,7 +358,7 @@ async def quais_categorias_tem(ctx, *args):
 
     if not linhas_arquivo:
         await ctx.send(
-            "❌ Nenhum arquivo foi carregado! Use !carregar arquivo.txt primeiro."
+            "❌ Nenhum arquivo foi carregado!"
         )
         return
 
@@ -438,7 +377,7 @@ async def quais_categorias_tem(ctx, *args):
             categorias[categoria_atual].append(linha_limpa)
 
     if not categorias:
-        await ctx.send("❌ Nenhuma categoria encontrada no arquivo!")
+        await ctx.send("❌ Nenhuma categoria encontrada!")
         return
 
     embed = discord.Embed(title="📂 CATEGORIAS", color=discord.Color.green())
@@ -529,7 +468,7 @@ async def todos_apelidos(ctx, *args):
             categorias[categoria_atual].append(linha_limpa)
 
     if not categorias:
-        await ctx.send("❌ Nenhuma categoria encontrada no arquivo!")
+        await ctx.send("❌ Nenhuma categoria encontrada!")
         return
 
     view = PaginadorApelidos(categorias, ctx.author.id)
@@ -540,83 +479,16 @@ async def todos_apelidos(ctx, *args):
 @bot.command(name="silabas")
 async def gerar_apelido(ctx):
 
-    prefixos = [
-        "telé",
-        "pim",
-        "wing",
-        "ban",
-        "splink",
-        "hatio",
-        "tchon",
-        "tché",
-        "ton",
-        "xilé",
-        "bu",
-        "trel",
-        "tchog",
-        "chu",
-        "bog",
-        "cam",
-        "top",
-        "esn",
-        "plog",
-        "cop",
-        "smô",
-        "glo",
-    ]
-    meios = [
-        "bo",
-        "ber",
-        "slom",
-        "de",
-        "stron",
-        "flin",
-        "vis",
-        "go",
-        "lé",
-        "gas",
-        "le",
-        "gle",
-        "pis",
-        "ban",
-        "pó",
-        "nó",
-        "órn",
-        "ólp",
-        "glers",
-    ]
-    sufixos = [
-        "gas",
-        "tos",
-        "rox",
-        "blus",
-        "bum",
-        "pito",
-        "nlu",
-        "lay",
-        "pson",
-        "clay",
-        "klins",
-        "fly",
-        "flay",
-        "vis",
-        "mongo",
-        "pisz",
-        "bugas",
-        "borg",
-        "glets",
-        "quets",
-        "lers",
-    ]
+    prefixos = ["telé", "pim", "wing", "ban", "splink", "hatio", "tchon", "tché", "ton", "xilé", "bu", "trel", "tchog", "chu", "bog", "cam", "top", "esn", "plog", "cop", "smô", "glo"]
+    meios = ["bo", "ber", "slom", "de", "stron", "flin", "vis", "go", "lé", "gas", "le", "gle", "pis", "ban", "pó", "nó", "órn", "ólp", "glers"]
+    sufixos = ["gas", "tos", "rox", "blus", "bum", "pito", "nlu", "lay", "pson", "clay", "klins", "fly", "flay", "vis", "mongo", "pisz", "bugas", "borg", "glets", "quets", "lers"]
 
     num_silabas = random.choice([2, 3])
 
     if num_silabas == 2:
         apelido = random.choice(prefixos) + random.choice(sufixos)
     else:
-        apelido = (
-            random.choice(prefixos) + random.choice(meios) + random.choice(sufixos)
-        )
+        apelido = random.choice(prefixos) + random.choice(meios) + random.choice(sufixos)
 
     apelido = apelido.capitalize()
 
@@ -629,55 +501,7 @@ async def gerar_apelido(ctx):
     await ctx.send(embed=embed)
 
 
-SILABAS_SUPER = [
-    "dri",
-    "klo",
-    "ver",
-    "son",
-    "as",
-    "preu",
-    "ble",
-    "tor",
-    "mas",
-    "que",
-    "mi",
-    "guar",
-    "dis",
-    "in",
-    "sla",
-    "psa",
-    "vo",
-    "klan",
-    "ni",
-    "mõn",
-    "gdon",
-    "drio",
-    "joer",
-    "nog",
-    "los",
-    "sono",
-    "õg",
-    "nor",
-    "dras",
-    "le",
-    "pur",
-    "min",
-    "xô",
-    "mig",
-    "ñor",
-    "blis",
-    "ter",
-    "glov",
-    "im",
-    "dir",
-    "ner",
-    "xa",
-    "mur",
-    "lin",
-    "plo",
-    "pler",
-    "nior",
-]
+SILABAS_SUPER = ["dri", "klo", "ver", "son", "as", "preu", "ble", "tor", "mas", "que", "mi", "guar", "dis", "in", "sla", "psa", "vo", "klan", "ni", "mõn", "gdon", "drio", "joer", "nog", "los", "sono", "õg", "nor", "dras", "le", "pur", "min", "xô", "mig", "ñor", "blis", "ter", "glov", "im", "dir", "ner", "xa", "mur", "lin", "plo", "pler", "nior"]
 
 
 def _gerar_palavra_super() -> str:
@@ -712,7 +536,7 @@ async def teste_meia_noite(ctx):
 
     if not linhas_arquivo:
         await ctx.send(
-            "❌ Nenhum arquivo foi carregado! Use !carregar arquivo.txt primeiro."
+            "❌ Nenhum arquivo foi carregado!"
         )
         return
 
@@ -768,15 +592,12 @@ async def teste_meia_noite(ctx):
 @commands.has_permissions(administrator=True)
 async def teste_novos_apelidos(ctx):
     """Força a verificação de novos apelidos agora e anuncia no canal (Admin)."""
-
+    
     # Envia mensagem inicial
     await ctx.send("🔄 Verificando novos apelidos no Google Docs...")
-
+    
     try:
-        if (
-            GOOGLE_DOCS_FILE_ID == "SEU_ID_AQUI"
-            or GOOGLE_DOCS_FILE_ID_COMPARATIVO == "SEU_ID_AQUI"
-        ):
+        if GOOGLE_DOCS_FILE_ID == "SEU_ID_AQUI" or GOOGLE_DOCS_FILE_ID_COMPARATIVO == "SEU_ID_AQUI":
             await ctx.send("❌ Google Docs IDs não configurados!")
             return
 
@@ -784,20 +605,16 @@ async def teste_novos_apelidos(ctx):
         conteudo_principal = await asyncio.get_event_loop().run_in_executor(
             None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
         )
-
+        
         conteudo_comparativo = await asyncio.get_event_loop().run_in_executor(
             None, baixar_google_docs, GOOGLE_DOCS_FILE_ID_COMPARATIVO
         )
 
         linhas_principal = [
-            l.rstrip("\n").rstrip("\r")
-            for l in conteudo_principal.split("\n")
-            if l.strip()
+            l.rstrip("\n").rstrip("\r") for l in conteudo_principal.split("\n") if l.strip()
         ]
         linhas_comparativo = [
-            l.rstrip("\n").rstrip("\r")
-            for l in conteudo_comparativo.split("\n")
-            if l.strip()
+            l.rstrip("\n").rstrip("\r") for l in conteudo_comparativo.split("\n") if l.strip()
         ]
 
         apelidos_principal = parse_categorias(linhas_principal)
@@ -816,6 +633,7 @@ async def teste_novos_apelidos(ctx):
             for apelido, categoria in adicionados.items():
                 por_categoria.setdefault(categoria, []).append(apelido)
 
+            # Mensagem no canal onde o comando foi acionado
             embed = discord.Embed(
                 title=f"🆕 {len(adicionados)} Novo(s) Apelido(s) Detectado(s)!",
                 color=discord.Color.teal(),
@@ -828,6 +646,30 @@ async def teste_novos_apelidos(ctx):
                 )
             embed.set_footer(text="Verificação manual via !testenovo")
             await ctx.send(embed=embed)
+            
+            # Anunciar também no canal da meia-noite
+            configs = carregar_configs()
+            for config in configs.values():
+                canal_id = config.get("canal_meia_noite")
+                if canal_id is None:
+                    continue
+
+                canal = bot.get_channel(canal_id)
+                if canal is None:
+                    continue
+
+                embed_canal = discord.Embed(
+                    title=f"🆕 {len(adicionados)} Novo(s) Apelido(s) Adicionado(s)!",
+                    color=discord.Color.teal(),
+                )
+                for categoria, apelidos_lista in por_categoria.items():
+                    embed_canal.add_field(
+                        name=f"📂 {categoria}",
+                        value="\n".join(f"• **{a}**" for a in apelidos_lista),
+                        inline=False,
+                    )
+                embed_canal.set_footer(text="Adicionado via Google Docs")
+                await canal.send(embed=embed_canal)
         else:
             # Nenhum apelido novo
             await ctx.send("✅ Verificação concluída! Nenhum apelido novo.")
