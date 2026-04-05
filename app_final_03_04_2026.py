@@ -214,7 +214,7 @@ async def on_ready():
 async def enviar_meia_noite():
     agora = datetime.now()
 
-    if agora.hour == 0 and agora.minute == 0:
+    if agora.hour == 19 and agora.minute == 0:
         configs = carregar_configs()
 
         for id_servidor_str, config in configs.items():
