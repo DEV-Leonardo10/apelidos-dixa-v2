@@ -547,7 +547,33 @@ async def teste_meia_noite(ctx):
     except Exception as e:
         await ctx.send(f"❌ Erro ao testar: {e}")
 
+@bot.command(name="DB_update")
+@commands.has_permissions(administrator=True)
+async def db_update(ctx):
+    """Copia todo o conteúdo do Google Docs e substitui o banco (Admin)."""
 
+    await ctx.send("🔄 Sincronizando banco de dados com o Google Docs...")
+
+    try:
+        conteudo = await asyncio.get_event_loop().run_in_executor(
+            None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
+        )
+
+        linhas = [
+            l.rstrip("\n").rstrip("\r") for l in conteudo.split("\n") if l.strip()
+        ]
+
+        apelidos = parse_categorias(linhas)
+
+        await salvar_comparativo(apelidos)
+
+        await ctx.send(
+            f"✅ Banco atualizado com sucesso! **{len(apelidos)}** apelidos sincronizados do Google Docs."
+        )
+
+    except Exception as e:
+        await ctx.send(f"❌ Erro ao sincronizar: {e}")
+        
 @bot.command(name="testenovo")
 @commands.has_permissions(administrator=True)
 async def teste_novos_apelidos(ctx):
@@ -633,15 +659,17 @@ async def ajuda(ctx, *args):
         description="Lista de comandos disponíveis:",
         color=discord.Color.blue(),
     )
-    embed.add_field(name="!recarregar", value="Recarrega o arquivo do Google Docs (Admin)", inline=False)
     embed.add_field(name="!apelido", value="Envia um apelido aleatório do arquivo carregado com categoria", inline=False)
     embed.add_field(name="!todos", value="Mostra todos os apelidos do arquivo separados por categoria", inline=False)
-    embed.add_field(name="!quais / !categorias", value="Mostra todas as categorias com a quantidade de apelidos", inline=False)
+    embed.add_field(name="!quais categorias tem / !categorias", value="Mostra todas as categorias com a quantidade de apelidos", inline=False)
     embed.add_field(name="!silabas", value="Gera um apelido aleatório com sílabas", inline=False)
     embed.add_field(name="!super-silaba", value="Gera um super apelido com duas palavras malucas", inline=False)
-    embed.add_field(name="!teste", value="Testa a função de meia-noite (Admin)", inline=False)
     embed.add_field(name="!testenovo", value="Força verificação de novos apelidos no Docs agora (Admin)", inline=False)
+    embed.add_field(name="!DB_update", value="Sincroniza o banco de dados com o Google Docs atual (Admin)", inline=False)
+    embed.add_field(name="!recarregar", value="Recarrega o arquivo do Google Docs na memoria(Admin)", inline=False)
+    embed.add_field(name="!teste", value="Testa a função de meia-noite (Admin)", inline=False)
     embed.add_field(name="!ajuda / !comandos / !help", value="Mostra esta mensagem", inline=False)
+    
     await ctx.send(embed=embed)
 
 
