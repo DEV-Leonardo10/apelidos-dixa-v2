@@ -21,6 +21,7 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 linhas_arquivo = []
+configs_servidores = {}
 CONFIG_FILE = "config_servidores.json"
 
 # IDs do Google Docs
@@ -138,7 +139,7 @@ def parse_categorias(linhas: list) -> dict:
 
 @bot.event
 async def on_ready():
-    global linhas_arquivo
+    global linhas_arquivo, configs_servidores
 
     print(f"✅ {bot.user} conectado com sucesso!")
 
@@ -165,7 +166,9 @@ async def on_ready():
     else:
         print("⚠️  Google Docs ID não configurado!")
 
-    carregar_configs()
+    # Carrega configs apenas uma vez na inicialização
+    configs_servidores = carregar_configs()
+
     enviar_meia_noite.start()
 
 
@@ -178,7 +181,6 @@ async def enviar_meia_noite():
     agora = datetime.utcnow()
 
     if agora.hour == 22 and agora.minute == 0:
-        configs = carregar_configs()
 
         # 1. Verificar novos apelidos
         apelidos_comparativo = await carregar_comparativo()
@@ -205,7 +207,7 @@ async def enviar_meia_noite():
             print(f"❌ Erro ao verificar novos apelidos: {e}")
 
         # 2. Enviar para cada servidor
-        for id_servidor_str, config in configs.items():
+        for id_servidor_str, config in configs_servidores.items():
             id_servidor = int(id_servidor_str)
             canal_meia_noite = config.get("canal_meia_noite")
             usuario_apelido = config.get("usuario_apelido")
@@ -507,8 +509,7 @@ async def teste_meia_noite(ctx):
         return
 
     try:
-        configs = carregar_configs()
-        config = configs.get(str(ctx.guild.id), {})
+        config = configs_servidores.get(str(ctx.guild.id), {})
 
         canal_meia_noite = config.get("canal_meia_noite")
         usuario_apelido = config.get("usuario_apelido")
@@ -547,33 +548,7 @@ async def teste_meia_noite(ctx):
     except Exception as e:
         await ctx.send(f"❌ Erro ao testar: {e}")
 
-@bot.command(name="DB_update")
-@commands.has_permissions(administrator=True)
-async def db_update(ctx):
-    """Copia todo o conteúdo do Google Docs e substitui o banco (Admin)."""
 
-    await ctx.send("🔄 Sincronizando banco de dados com o Google Docs...")
-
-    try:
-        conteudo = await asyncio.get_event_loop().run_in_executor(
-            None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
-        )
-
-        linhas = [
-            l.rstrip("\n").rstrip("\r") for l in conteudo.split("\n") if l.strip()
-        ]
-
-        apelidos = parse_categorias(linhas)
-
-        await salvar_comparativo(apelidos)
-
-        await ctx.send(
-            f"✅ Banco atualizado com sucesso! **{len(apelidos)}** apelidos sincronizados do Google Docs."
-        )
-
-    except Exception as e:
-        await ctx.send(f"❌ Erro ao sincronizar: {e}")
-        
 @bot.command(name="testenovo")
 @commands.has_permissions(administrator=True)
 async def teste_novos_apelidos(ctx):
@@ -623,8 +598,7 @@ async def teste_novos_apelidos(ctx):
 
             await salvar_comparativo(apelidos_principal)
 
-            configs = carregar_configs()
-            for config in configs.values():
+            for config in configs_servidores.values():
                 canal_id = config.get("canal_meia_noite")
                 if canal_id is None:
                     continue
@@ -652,6 +626,34 @@ async def teste_novos_apelidos(ctx):
         await ctx.send(f"❌ Erro na verificação: {e}")
 
 
+@bot.command(name="DB_update")
+@commands.has_permissions(administrator=True)
+async def db_update(ctx):
+    """Copia todo o conteúdo do Google Docs e substitui o banco (Admin)."""
+
+    await ctx.send("🔄 Sincronizando banco de dados com o Google Docs...")
+
+    try:
+        conteudo = await asyncio.get_event_loop().run_in_executor(
+            None, baixar_google_docs, GOOGLE_DOCS_FILE_ID
+        )
+
+        linhas = [
+            l.rstrip("\n").rstrip("\r") for l in conteudo.split("\n") if l.strip()
+        ]
+
+        apelidos = parse_categorias(linhas)
+
+        await salvar_comparativo(apelidos)
+
+        await ctx.send(
+            f"✅ Banco atualizado com sucesso! **{len(apelidos)}** apelidos sincronizados do Google Docs."
+        )
+
+    except Exception as e:
+        await ctx.send(f"❌ Erro ao sincronizar: {e}")
+
+
 @bot.command(name="ajuda", aliases=["comandos", "help"])
 async def ajuda(ctx, *args):
     embed = discord.Embed(
@@ -659,17 +661,16 @@ async def ajuda(ctx, *args):
         description="Lista de comandos disponíveis:",
         color=discord.Color.blue(),
     )
+    embed.add_field(name="!recarregar", value="Recarrega o arquivo do Google Docs (Admin)", inline=False)
     embed.add_field(name="!apelido", value="Envia um apelido aleatório do arquivo carregado com categoria", inline=False)
     embed.add_field(name="!todos", value="Mostra todos os apelidos do arquivo separados por categoria", inline=False)
-    embed.add_field(name="!quais categorias tem / !categorias", value="Mostra todas as categorias com a quantidade de apelidos", inline=False)
+    embed.add_field(name="!quais / !categorias", value="Mostra todas as categorias com a quantidade de apelidos", inline=False)
     embed.add_field(name="!silabas", value="Gera um apelido aleatório com sílabas", inline=False)
     embed.add_field(name="!super-silaba", value="Gera um super apelido com duas palavras malucas", inline=False)
+    embed.add_field(name="!teste", value="Testa a função de meia-noite (Admin)", inline=False)
     embed.add_field(name="!testenovo", value="Força verificação de novos apelidos no Docs agora (Admin)", inline=False)
     embed.add_field(name="!DB_update", value="Sincroniza o banco de dados com o Google Docs atual (Admin)", inline=False)
-    embed.add_field(name="!recarregar", value="Recarrega o arquivo do Google Docs na memoria(Admin)", inline=False)
-    embed.add_field(name="!teste", value="Testa a função de meia-noite (Admin)", inline=False)
     embed.add_field(name="!ajuda / !comandos / !help", value="Mostra esta mensagem", inline=False)
-    
     await ctx.send(embed=embed)
 
 
